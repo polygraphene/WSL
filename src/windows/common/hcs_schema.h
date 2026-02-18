@@ -294,6 +294,7 @@ struct Memory
     std::optional<MemoryBackingPageSize> BackingPageSize;
     std::optional<uint32_t> FaultClusterSizeShift;
     std::optional<uint32_t> DirectMapFaultClusterSizeShift;
+    std::optional<uint64_t> LowMmioGapInMB;
     std::optional<uint64_t> HighMmioGapInMB;
     std::optional<uint64_t> HighMmioBaseInMB;
     std::optional<std::wstring> HostingProcessNameSuffix;
@@ -310,6 +311,7 @@ inline void to_json(nlohmann::json& j, const Memory& memory)
     OMIT_IF_EMPTY(j, memory, BackingPageSize);
     OMIT_IF_EMPTY(j, memory, FaultClusterSizeShift);
     OMIT_IF_EMPTY(j, memory, DirectMapFaultClusterSizeShift);
+    OMIT_IF_EMPTY(j, memory, LowMmioGapInMB);
     OMIT_IF_EMPTY(j, memory, HighMmioGapInMB);
     OMIT_IF_EMPTY(j, memory, HighMmioBaseInMB);
     OMIT_IF_EMPTY(j, memory, HostingProcessNameSuffix);
@@ -486,6 +488,21 @@ struct CrashReport
     std::wstring CrashLog;
 
     NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(CrashReport, CrashLog);
+};
+
+struct VirtualFunction
+{
+    std::wstring DeviceInstancePath;
+    bool AllowDirectTranslatedP2P;
+
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE_ONLY_SERIALIZE(VirtualFunction, DeviceInstancePath, AllowDirectTranslatedP2P);
+};
+
+struct VirtualPci
+{
+    std::vector<VirtualFunction> Functions;
+
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE_ONLY_SERIALIZE(VirtualPci, Functions);
 };
 
 } // namespace wsl::windows::common::hcs

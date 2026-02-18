@@ -235,6 +235,7 @@ namespace ConfigSetting {
     static constexpr auto KernelCommandLine = "wsl2.kernelCommandLine";
     static constexpr auto KernelModules = "wsl2.kernelModules";
     static constexpr auto Memory = "wsl2.memory";
+    static constexpr auto LowMmioGapInMB = "wsl2.lowMmioGapInMB";
     static constexpr auto Processors = "wsl2.processors";
     static constexpr auto DebugConsole = "wsl2.debugConsole";
     static constexpr auto EarlyBootLogging = "wsl2.earlyBootLogging";
@@ -245,6 +246,7 @@ namespace ConfigSetting {
     static constexpr auto Virtio9p = "wsl2.virtio9p";
     static constexpr auto Virtiofs = "wsl2.virtiofs";
     static constexpr auto KernelDebugPort = "wsl2.kernelDebugPort";
+    static constexpr auto PciPassthroughDevices = "wsl2.pciPassthroughDevices";
     static constexpr auto GpuSupport = "wsl2.gpuSupport";
     static constexpr auto GuiApplications = "wsl2.guiApplications";
     static constexpr auto SystemDistro = "wsl2.systemDistro";
@@ -310,6 +312,7 @@ struct Config
     std::filesystem::path KernelModulesPath;
     UINT64 MemorySizeBytes = 0;
     UINT64 MaximumMemorySizeBytes = 0;
+    int LowMmioGapInMB = 0;
     int ProcessorCount = 0;
     int MaximumProcessorCount = 0;
     bool EnableDebugConsole = false;
@@ -325,6 +328,7 @@ struct Config
     bool EnableVirtio = !shared::Arm64 || windows::common::helpers::IsWindows11OrAbove();
     bool EnableVirtioFs = false;
     int KernelDebugPort = 0;
+    std::wstring PciPassthroughDevices;
     bool EnableGpuSupport = true;
     bool EnableGuiApps = true;
     std::filesystem::path SystemDistroPath;

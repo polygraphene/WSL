@@ -365,6 +365,25 @@ void WslCoreVm::Initialize(const GUID& VmId, const wil::shared_handle& UserToken
         throw;
     }
 
+    if (!m_vmConfig.PciPassthroughDevices.empty()) {
+        m_vmConfig.EnableGpuSupport = false;
+
+        auto split = m_vmConfig.PciPassthroughDevices | std::views::split(L'|') |
+                     std::views::transform([](auto&& str) { return std::wstring_view(&*str.begin(), std::ranges::distance(str)); });
+
+        int i = 0;
+        for (auto&& device : split)
+        {
+            hcs::ModifySettingRequest<hcs::VirtualPci> vpciRequest{};
+            vpciRequest.ResourcePath = L"VirtualMachine/Devices/VirtualPci/mypci" + std::to_wstring(i);
+            vpciRequest.RequestType = hcs::ModifyRequestType::Add;
+            vpciRequest.Settings.Functions.push_back(hcs::VirtualFunction{std::wstring(device), false});
+
+            wsl::windows::common::hcs::ModifyComputeSystem(m_system.get(), wsl::shared::ToJsonW(vpciRequest).c_str());
+            i++;
+        }
+    }
+
     // Add GPUs to the utility VM.
     if (m_vmConfig.EnableGpuSupport)
     {
@@ -1516,30 +1535,32 @@ std::wstring WslCoreVm::GenerateConfigJson()
 
     // Ensure the 2MB granularity enforced by HCS.
     vmSettings.ComputeTopology.Memory.SizeInMB = ((m_vmConfig.MemorySizeBytes / _1MB) & ~0x1);
-    vmSettings.ComputeTopology.Memory.AllowOvercommit = true;
-    vmSettings.ComputeTopology.Memory.EnableDeferredCommit = true;
-    vmSettings.ComputeTopology.Memory.EnableColdDiscardHint = true;
-
-    // Configure backing page size, fault cluster shift size, and cold discard hint size to favor density (lower vmmem usage).
-    //
-    // N.B. Cold discard hint size should be a multiple of the fault cluster shift size.
-    //
-    // N.B. This is only done on builds that have the fix for the VID deadlock on partition teardown.
-    if ((m_windowsVersion.BuildNumber >= WindowsBuildNumbers::Germanium) ||
-        (m_windowsVersion.BuildNumber >= WindowsBuildNumbers::Cobalt && m_windowsVersion.UpdateBuildRevision >= 2360) ||
-        (m_windowsVersion.BuildNumber >= WindowsBuildNumbers::Iron && m_windowsVersion.UpdateBuildRevision >= 1970) ||
-        (m_windowsVersion.BuildNumber >= WindowsBuildNumbers::Vibranium_22H2 && m_windowsVersion.UpdateBuildRevision >= 3393))
+    if (m_vmConfig.PciPassthroughDevices.empty())
     {
-        vmSettings.ComputeTopology.Memory.BackingPageSize = hcs::MemoryBackingPageSize::Small;
-        vmSettings.ComputeTopology.Memory.FaultClusterSizeShift = 4;          // 64k
-        vmSettings.ComputeTopology.Memory.DirectMapFaultClusterSizeShift = 4; // 64k
-        m_coldDiscardShiftSize = 5;                                           // 128k
-    }
-    else
-    {
-        m_coldDiscardShiftSize = 9; // 2MB
-    }
+        vmSettings.ComputeTopology.Memory.AllowOvercommit = true;
+        vmSettings.ComputeTopology.Memory.EnableDeferredCommit = true;
+        vmSettings.ComputeTopology.Memory.EnableColdDiscardHint = true;
 
+        // Configure backing page size, fault cluster shift size, and cold discard hint size to favor density (lower vmmem usage).
+        //
+        // N.B. Cold discard hint size should be a multiple of the fault cluster shift size.
+        //
+        // N.B. This is only done on builds that have the fix for the VID deadlock on partition teardown.
+        if ((m_windowsVersion.BuildNumber >= WindowsBuildNumbers::Germanium) ||
+            (m_windowsVersion.BuildNumber >= WindowsBuildNumbers::Cobalt && m_windowsVersion.UpdateBuildRevision >= 2360) ||
+            (m_windowsVersion.BuildNumber >= WindowsBuildNumbers::Iron && m_windowsVersion.UpdateBuildRevision >= 1970) ||
+            (m_windowsVersion.BuildNumber >= WindowsBuildNumbers::Vibranium_22H2 && m_windowsVersion.UpdateBuildRevision >= 3393))
+        {
+            vmSettings.ComputeTopology.Memory.BackingPageSize = hcs::MemoryBackingPageSize::Small;
+            vmSettings.ComputeTopology.Memory.FaultClusterSizeShift = 4;          // 64k
+            vmSettings.ComputeTopology.Memory.DirectMapFaultClusterSizeShift = 4; // 64k
+            m_coldDiscardShiftSize = 5; // 128k
+        }
+        else
+        {
+            m_coldDiscardShiftSize = 9; // 2MB
+        }
+    }
     // May need more MMIO than the default 16GB. WSL uses a vpci device per Plan9 share, WSLg adds a GPU device,
     // and a pmem device, and each shared memory virtiofs device needs more than 8GB of MMIO.
     SafeInt<INT64> highMmioGapInMB = DEFAULT_HIGH_MMIO_GAP_IN_MB;
@@ -1591,6 +1612,7 @@ std::wstring WslCoreVm::GenerateConfigJson()
     {
         highMmioGapInMB += RequiredExtraMmioSpaceForPmemFileInMb(m_vmConfig.SystemDistroPath.c_str());
     }
+    highMmioGapInMB += 16416 * 10;
 
     // Log telemetry to measure system distro usage.
     WSL_LOG(
@@ -1605,7 +1627,12 @@ std::wstring WslCoreVm::GenerateConfigJson()
     // The guest may only be able to access 36-bits of address space (minimum supported), so shift the high MMIO base
     // down such that all addresses are accessible. The default starting point is 16G below the maximum 36-bit address,
     // so for guests that support larger address spaces, the default base should suffice.
-    vmSettings.ComputeTopology.Memory.HighMmioBaseInMB = MAX_36_BIT_PAGE_IN_MB - highMmioGapInMB;
+    vmSettings.ComputeTopology.Memory.HighMmioBaseInMB = MAX_36_BIT_PAGE_IN_MB * 16 - highMmioGapInMB;
+
+    if (m_vmConfig.LowMmioGapInMB != 0)
+    {
+        vmSettings.ComputeTopology.Memory.LowMmioGapInMB = m_vmConfig.LowMmioGapInMB;
+    }
 
     // Configure the number of processors.
     vmSettings.ComputeTopology.Processor.Count = m_vmConfig.ProcessorCount;
