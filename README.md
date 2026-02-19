@@ -25,3 +25,8 @@ pciPassthroughDevices=PCIP\\VEN_144D&DEV_A80D&SUBSYS_A801144D&REV_00\\4&447857B&
 ```
 
 Only tested on NVMe disk. GPU passthrough did not work on my test.
+
+## Limitations
+
+1. Only work on windows server
+2. VM memory must be allocated on boot. That is, dynamic allocation or shrinking are not supported.
